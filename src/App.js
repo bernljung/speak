@@ -1,54 +1,67 @@
 import React, { Component } from 'react';
 import logo from './logo.svg';
 import './App.css';
+const uuidv4 = require('uuid/v4');
 
 
-const INFOCASTER_API_BASE_URL = 'https://infocaster-stage.lcc.infomaker.io/v1';
+const INFOCASTER_API_BASE_URL = 'https://infocaster.lcc.infomaker.io/v1';
 class App extends Component {
 
   constructor(props) {
     super(props);
     this.state = {
+      clientId: uuidv4(),
+      sound: true,
       text: '',
-      lang: 'en-US',
+      lang: 'sv-SE',
       validLangs: [
         {
+          flag: '🇩🇪',
           displayName: 'German',
           code: 'de-DE'
         },
         {
+          flag: '🇩🇰',
           displayName: 'Danish',
           code: 'da-DK'
         },
         {
-          displayName: 'American',
+          flag: '🇺🇸',
+          displayName: 'English',
           code: 'en-US'
         },
         {
+          flag: '🇬🇧',
           displayName: 'English',
           code: 'en-GB'
         },
         {
+          flag: '🇪🇸',
           displayName: 'Spanish',
           code: 'es-ES'
         },
         {
+          flag: '🇫🇮',
           displayName: 'Finnish',
           code: 'fi-FI'
         },
         {
+          flag: '🇫🇷',
           displayName: 'French',
           code: 'fr-FR'
         },
         {
+          flag: '🇳🇴',
           displayName: 'Norwegian',
           code: 'nb-NO'
         },
         {
+          flag: '🇷🇺',
           displayName: 'Russian',
           code: 'ru-RU'
         },
         {
+          flag: '🇸🇪',
           displayName: 'Swedish',
           code: 'sv-SE'
         },
@@ -59,6 +72,33 @@ class App extends Component {
 
   componentDidMount() {
     this.connect();
+  }
+
+  render() {
+    return (
+      <div className='App'>
+        <input className='textInput' placeholder='Input the stuff. ✌' value={this.state.text}
+          onChange={this.handleInputChange.bind(this)}
+          onKeyPress={this.handleInputKeypress.bind(this)} />
+        <select className='selectLang' onChange={this.handleSelectLangChange.bind(this)} value={this.state.lang} name='selectLang'>
+          {this.state.validLangs.sort((x, y)=> x.displayName > y.displayName).map(item => {
+            return <option value={item.code}> {item.flag} {item.displayName}</option>
+          }) }
+        </select>
+        <div className='soundCheckbox'>
+          <input type='checkbox' id='soundCheckbox' className='soundCheckbox' name='sound' onChange={this.handleSoundCheckboxChange.bind(this)} checked={this.state.sound} />
+          <label for='soundCheckbox'>Speak on my device</label>
+        </div>
+        <pre className='commandPre'>{
+`curl -X POST -H "Content-Type: application/json" -d '
+  {
+    "text":"xyz",
+    "lang":"en-US"
+  }' ${INFOCASTER_API_BASE_URL}/publisher/open/broadcast/speak-xxx/publish`
+}</pre>
+      <span className='poweredBy'>Powered by <strong>Infomaker LCC</strong></span>
+      </div>
+    );
   }
 
   subscribe(){
@@ -101,8 +141,8 @@ class App extends Component {
           this.subscribe();
         } else if(parsedData.type === 'broadcastPublish'){
           if(parsedData.data && parsedData.data.payload) {
-            const parsedPayload = JSON.parse(parsedData.data.payload);
-            this.handleMessage(parsedPayload);
+            const payload = typeof parsedData.data.payload === 'object' ? parsedData.data.payload : JSON.parse(parsedData.data.payload);
+            this.handleMessage(payload);
           }
         }
       };
@@ -128,6 +168,8 @@ class App extends Component {
   handleMessage(msg) {
     console.log('Received message', msg);
     if(msg.text && msg.lang) {
+      console.log("sender", msg);
+      if(!this.state.sound || (msg.senderId === this.state.clientId)) return;
       if(window['speechSynthesis']) {
         const u = new SpeechSynthesisUtterance();
         u.text = msg.text;
@@ -147,6 +189,7 @@ class App extends Component {
         mode: 'no-cors',
         method: 'POST',
         body: JSON.stringify({
+          senderId: this.state.clientId,
           text: this.state.text,
           lang: this.state.lang
         })
@@ -156,7 +199,9 @@ class App extends Component {
   }
 
   handleInputChange(e) {
-    this.setState({value: e.target.value})
+    this.setState({
+      text: e.target.value
+    });
   }
 
   handleInputKeypress(e) {
@@ -174,19 +219,10 @@ class App extends Component {
     });
   }
 
-  render() {
-    return (
-      <div className='App'>
-        <input className='textInput' placeholder='Input the stuff. ✌' value={this.state.text}
-          onChange={this.handleInputChange.bind(this)}
-          onKeyPress={this.handleInputKeypress.bind(this)} />
-        <select className='selectLang' onChange={this.handleSelectLangChange.bind(this)} name='selectLang'>
-          {this.state.validLangs.sort((x, y)=> x.displayName > y.displayName).map(item => {
-            return <option value={item.code}>{item.displayName}</option>
-          }) }
-        </select>
-      </div>
-    );
+  handleSoundCheckboxChange(e) {
+    this.setState({
+      sound: e.target.checked
+    })
   }
 }
 
