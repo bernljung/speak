@@ -1,0 +1,9 @@
+version: '3'
+services:
+    s3-sync:
+        image: bernljung/aws
+        volumes:
+        - ./build:/workspace
+        env_file: .aws_credentials
+        working_dir: /workspace
+        command: s3 sync --delete . $S3_URI
