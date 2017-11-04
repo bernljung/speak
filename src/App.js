@@ -4,12 +4,19 @@ import './App.css';
 const uuidv4 = require('uuid/v4');
 
 
-const INFOCASTER_API_BASE_URL = 'https://infocaster.lcc.infomaker.io/v1';
+const PUBLISHER_ID = 'open';
+const BROADCAST_ID = 'speak';
+const INFOCASTER_API_BASE_URL = 'https://infocaster-stage.lcc.infomaker.io/v1';
+const PUBLISHER_BASE_URL = `${INFOCASTER_API_BASE_URL}/publisher/${PUBLISHER_ID}`;
+const PUBLISH_URL = `${PUBLISHER_BASE_URL}/broadcast/${BROADCAST_ID}/publish`;
+const SESSION_URL = `${PUBLISHER_BASE_URL}/session`;
 class App extends Component {
 
   constructor(props) {
     super(props);
     this.state = {
+      connected: false,
+      channel: 'general',
       clientId: uuidv4(),
       sound: true,
       text: '',
@@ -66,56 +73,122 @@ class App extends Component {
           code: 'sv-SE'
         },
       ],
-      infocasterSessionUrl: `${INFOCASTER_API_BASE_URL}/publisher/open/session`
+      subscribeUrl: '',
     };
   }
 
   componentDidMount() {
-    this.connect();
+    this.connect().then(source => {
+      this.listenOnEventSource(source);
+    });
   }
 
   render() {
     return (
       <div className='App'>
+
+        <input className='channelInput' placeholder='Channel' value={this.state.channel}
+          onChange={this.handleChannelChange.bind(this)} />
+
         <input className='textInput' placeholder='Input the stuff. ✌' value={this.state.text}
           onChange={this.handleInputChange.bind(this)}
           onKeyPress={this.handleInputKeypress.bind(this)} />
+
         <select className='selectLang' onChange={this.handleSelectLangChange.bind(this)} value={this.state.lang} name='selectLang'>
           {this.state.validLangs.sort((x, y)=> x.displayName > y.displayName).map(item => {
             return <option value={item.code}> {item.flag} {item.displayName}</option>
           }) }
         </select>
+
         <div className='soundCheckbox'>
           <input type='checkbox' id='soundCheckbox' className='soundCheckbox' name='sound' onChange={this.handleSoundCheckboxChange.bind(this)} checked={this.state.sound} />
           <label for='soundCheckbox'>Speak on my device</label>
         </div>
+
         <pre className='commandPre'>{
 `curl -X POST -H "Content-Type: application/json" -d '
   {
     "text":"xyz",
     "lang":"en-US"
-  }' ${INFOCASTER_API_BASE_URL}/publisher/open/broadcast/speak-xxx/publish`
+  }' ${PUBLISH_URL}`
 }</pre>
       <span className='poweredBy'>Powered by <strong>Infomaker LCC</strong></span>
       </div>
     );
   }
 
-  subscribe(){
-    fetch(`${INFOCASTER_API_BASE_URL}/instance/${this.state.destination.instanceId}/v1/publisher/open/broadcast/speak-xxx/subscribe`,
+  connect() {
+    return new Promise((resolve, reject) => {
+      if(this.state.connected) {
+        return resolve();
+      }
+
+      const source = new EventSource(SESSION_URL);
+
+      source.onerror = (e) => {
+        console.error('EventSource error', e.target.readyState, e, JSON.stringify(e));
+      };
+
+
+      source.onopen = (e) => {
+        console.info(e);
+        this.setState({ connected : true });
+        return resolve(source);
+      };
+    });
+  }
+
+  listenOnEventSource(source) {
+    source.onmessage = (e) => {
+      console.log("Received event", e.data);
+
+      let parsedData = JSON.parse(e.data);
+
+      switch(parsedData.type) {
+        case 'sessionInit':
+          this.setState({
+            webhookUrl : parsedData.data.webhookUrl,
+            sessionSecret : parsedData.data.sessionSecret,
+            destination : parsedData.data.destination,
+            subscribeUrl: `${INFOCASTER_API_BASE_URL}/instance/${parsedData.data.destination.instanceId}/v1/publisher/${PUBLISHER_ID}/broadcast/${BROADCAST_ID}/subscribe`
+          });
+
+          this.subscribe();
+          break;
+
+        case 'subscribed':
+          console.log('Subscribed event', e);
+          break;
+        case 'broadcastPublish':
+          if(parsedData.data && parsedData.data.payload) {
+            const payload = typeof parsedData.data.payload === 'object' ? parsedData.data.payload : JSON.parse(parsedData.data.payload);
+            this.handleMessage(payload);
+          }
+          break;
+        default:
+          console.log('Received unknown event', e);
+      }
+    };
+  };
+
+  subscribe() {
+    console.log("Subscribing to ", this.state.channel)
+    fetch(this.state.subscribeUrl,
     {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        mode: 'no-cors',
+        cors: true,
         method: 'POST',
         body: JSON.stringify({
           sessionId: this.state.destination.sessionId,
           sessionSecret: this.state.sessionSecret,
           sendConfirmationToSession: true,
           filters: [
-            {}
+            {
+              channel: this.state.channel
+            }
           ]
         })
     })
@@ -123,46 +196,28 @@ class App extends Component {
     .catch(function(res){ console.log('subscribe failure', res) })
    }
 
-
-  connect() {
-    if(!this.state.connected){
-      this.source = new EventSource(this.state.infocasterSessionUrl);
-      this.source.onmessage = (e) => {
-        console.log(e.data)
-
-        let parsedData = JSON.parse(e.data);
-
-        if(parsedData.type === 'sessionInit'){
-          this.setState({
-            webhookUrl : parsedData.data.webhookUrl,
-            sessionSecret : parsedData.data.sessionSecret,
-            destination : parsedData.data.destination
-          });
-          this.subscribe();
-        } else if(parsedData.type === 'broadcastPublish'){
-          if(parsedData.data && parsedData.data.payload) {
-            const payload = typeof parsedData.data.payload === 'object' ? parsedData.data.payload : JSON.parse(parsedData.data.payload);
-            this.handleMessage(payload);
-          }
-        }
-      };
-
-
-      this.source.onerror = (e) => {
-        console.error('EventSource error', e.target.readyState, e, JSON.stringify(e));
-        this.setState({
-          error : JSON.stringify(e)
-        });
-      };
-
-
-      this.source.onopen = (e) => {
-        console.info(e);
-        this.setState({
-          connected : true
-        });
-      };
-    }
+  unsubscribe() {
+    fetch(this.state.subscribeUrl,
+      {
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          cors: true,
+          method: 'DELETE',
+          body: JSON.stringify({
+            sessionId: this.state.destination.sessionId,
+            sessionSecret: this.state.sessionSecret,
+            sendConfirmationToSession: true,
+            filters: [
+              {
+                channel: this.state.channel
+              }
+            ]
+          })
+      })
+      .then(function(res){ console.log('unsubscribe success', res) })
+      .catch(function(res){ console.log('unsubscribe failure', res) })
   }
 
   handleMessage(msg) {
@@ -180,49 +235,49 @@ class App extends Component {
   }
 
   sendMessage() {
-    fetch(`${INFOCASTER_API_BASE_URL}/publisher/open/broadcast/speak-xxx/publish`,
+    fetch(PUBLISH_URL,
     {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        mode: 'no-cors',
+        cors: true,
         method: 'POST',
         body: JSON.stringify({
           senderId: this.state.clientId,
           text: this.state.text,
-          lang: this.state.lang
+          lang: this.state.lang,
+          channel: this.state.channel
         })
     })
     .then(function(res){ console.log('publish success', res) })
-    .catch(function(res){ console.log('publish failure', res) })
+    .catch(function(res){ console.log('publish failure', res) });
+  }
+
+  handleChannelChange(e) {
+    this.unsubscribe();
+    this.setState({ channel: e.target.value }, () => {
+      this.subscribe();
+    });
   }
 
   handleInputChange(e) {
-    this.setState({
-      text: e.target.value
-    });
+    this.setState({ text: e.target.value });
   }
 
   handleInputKeypress(e) {
     if(e.key === 'Enter') {
       this.sendMessage();
-      this.setState({
-        text: ''
-      });
+      this.setState({ text: '' });
     }
   }
 
   handleSelectLangChange(e) {
-    this.setState({
-      lang: e.target.value
-    });
+    this.setState({ lang: e.target.value });
   }
 
   handleSoundCheckboxChange(e) {
-    this.setState({
-      sound: e.target.checked
-    })
+    this.setState({ sound: e.target.checked });
   }
 }
 
