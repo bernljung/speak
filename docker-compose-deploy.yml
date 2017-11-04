@@ -6,4 +6,4 @@ services:
         - ./build:/workspace
         env_file: .aws_credentials
         working_dir: /workspace
-        command: s3 sync --delete . $S3_URI
+        command: s3 sync --delete . $S3_URI --acl public-read
