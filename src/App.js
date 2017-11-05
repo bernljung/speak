@@ -10,14 +10,20 @@ const INFOCASTER_API_BASE_URL = 'https://infocaster-stage.lcc.infomaker.io/v1';
 const PUBLISHER_BASE_URL = `${INFOCASTER_API_BASE_URL}/publisher/${PUBLISHER_ID}`;
 const PUBLISH_URL = `${PUBLISHER_BASE_URL}/broadcast/${BROADCAST_ID}/publish`;
 const SESSION_URL = `${PUBLISHER_BASE_URL}/session`;
+const CLIENT_ID = uuidv4();
 class App extends Component {
 
   constructor(props) {
     super(props);
     this.state = {
+      username: CLIENT_ID,
       connected: false,
       channel: 'general',
-      clientId: uuidv4(),
+      clients: [{
+        username: CLIENT_ID,
+        id: CLIENT_ID,
+        lastCheckIn: Date.now()
+      }],
       sound: true,
       text: '',
       lang: 'sv-SE',
@@ -112,7 +118,12 @@ class App extends Component {
     "lang":"en-US"
   }' ${PUBLISH_URL}`
 }</pre>
-      <span className='poweredBy'>Powered by <strong>Infomaker LCC</strong></span>
+        <ul>
+          {this.state.clients.map(client => {
+            return <li>{client.username}</li>;
+          })}
+        </ul>
+        <span className='poweredBy'>Powered by <strong>Infomaker LCC</strong></span>
       </div>
     );
   }
@@ -157,7 +168,10 @@ class App extends Component {
           break;
 
         case 'subscribed':
-          console.log('Subscribed event', e);
+          this.joinChannel(parsedData.data.filter.channel);
+          break;
+        case 'unsubscribed':
+          this.leaveChannel(parsedData.data.filter.channel);
           break;
         case 'broadcastPublish':
           if(parsedData.data && parsedData.data.payload) {
@@ -222,9 +236,28 @@ class App extends Component {
 
   handleMessage(msg) {
     console.log('Received message', msg);
+    switch (msg.type) {
+      case 'textMessage':
+          this.speak(msg);
+        break;
+      case 'joinChannel':
+        this.addClient(msg);
+        // Let the new client know we're here.
+        // Can we address destination directly? Is sessionId client id perhaps?
+        // also change from channel to room to avoid confusion, or. use channels as is? Anyway. Good night.
+
+        break;
+      case 'leaveChannel':
+        this.removeClient(msg);
+        break;
+      default:
+        console.log('Unknown message type', msg.type);
+    }
+  }
+
+  speak(msg) {
     if(msg.text && msg.lang) {
-      console.log("sender", msg);
-      if(!this.state.sound || (msg.senderId === this.state.clientId)) return;
+      if(!this.state.sound || (msg.senderId === CLIENT_ID)) return;
       if(window['speechSynthesis']) {
         const u = new SpeechSynthesisUtterance();
         u.text = msg.text;
@@ -234,7 +267,36 @@ class App extends Component {
     }
   }
 
-  sendMessage() {
+  addClient(msg) {
+    if(msg.senderId) {
+      if(this.state.clients.filter(client => client.id === msg.senderId).length > 0) return;
+      this.setState({ clients: this.state.clients.concat([{ username: msg.username, id: msg.senderId, lastCheckIn: Date.now()}]) });
+    }
+  }
+
+  removeClient(msg) {
+    if(msg.senderId) {
+
+      let newClients = this.state.clients.filter(client => {
+        return client.id !== msg.senderId; }
+      );
+      console.log(newClients);
+      this.setState({
+        clients: this.state.clients.filter(client => {
+          return client.id !== msg.senderId; }
+        )
+      });
+    }
+  }
+
+  joinChannel(channel) {
+    // Reset client list
+    this.setState({ clients: [{
+        id: CLIENT_ID,
+        username: this.state.username,
+        lastCheckIn: Date.now()
+      }]
+    });
     fetch(PUBLISH_URL,
     {
         headers: {
@@ -244,7 +306,54 @@ class App extends Component {
         cors: true,
         method: 'POST',
         body: JSON.stringify({
-          senderId: this.state.clientId,
+          type: 'joinChannel',
+          senderId: CLIENT_ID,
+          username: this.state.username,
+          channel: channel
+        })
+    })
+    .then(function(res){ console.log('publish success', res) })
+    .catch(function(res){ console.log('publish failure', res) });
+  }
+
+  leaveChannel(channel) {
+    // Reset client list
+    this.setState({ clients: [{
+        id: CLIENT_ID,
+        username: this.state.username,
+        lastCheckIn: Date.now()
+      }]
+    });
+    fetch(PUBLISH_URL,
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        cors: true,
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'leaveChannel',
+          senderId: CLIENT_ID,
+          channel: channel
+        })
+    })
+    .then(function(res){ console.log('publish success', res) })
+    .catch(function(res){ console.log('publish failure', res) });
+  }
+
+  sendTextMessage() {
+    fetch(PUBLISH_URL,
+    {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        cors: true,
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'textMessage',
+          senderId: CLIENT_ID,
           text: this.state.text,
           lang: this.state.lang,
           channel: this.state.channel
@@ -267,7 +376,7 @@ class App extends Component {
 
   handleInputKeypress(e) {
     if(e.key === 'Enter') {
-      this.sendMessage();
+      this.sendTextMessage();
       this.setState({ text: '' });
     }
   }
