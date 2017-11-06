@@ -186,9 +186,7 @@ class App extends Component {
           sessionSecret: this.state.sessionSecret,
           sendConfirmationToSession: true,
           filters: [
-            {
-              channel: this.state.channel
-            }
+            {}
           ]
         })
     })
@@ -210,9 +208,7 @@ class App extends Component {
             sessionSecret: this.state.sessionSecret,
             sendConfirmationToSession: true,
             filters: [
-              {
-                channel: this.state.channel
-              }
+              {}
             ]
           })
       })
@@ -246,8 +242,7 @@ class App extends Component {
         body: JSON.stringify({
           senderId: this.state.clientId,
           text: this.state.text,
-          lang: this.state.lang,
-          channel: this.state.channel
+          lang: this.state.lang
         })
     })
     .then(function(res){ console.log('publish success', res) })
