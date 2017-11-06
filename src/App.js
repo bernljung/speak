@@ -87,8 +87,8 @@ class App extends Component {
     return (
       <div className='App'>
 
-        <input className='channelInput' placeholder='Channel' value={this.state.channel}
-          onChange={this.handleChannelChange.bind(this)} />
+        {/* <input className='channelInput' placeholder='Channel' value={this.state.channel}
+          onChange={this.handleChannelChange.bind(this)} /> */}
 
         <input className='textInput' placeholder='Input the stuff. ✌' value={this.state.text}
           onChange={this.handleInputChange.bind(this)}
@@ -108,8 +108,8 @@ class App extends Component {
         <pre className='commandPre'>{
 `curl -X POST -H "Content-Type: application/json" -d '
   {
-    "text":"xyz",
-    "lang":"en-US"
+    "text":"${this.state.text}",
+    "lang":"${this.state.lang}"
   }' ${PUBLISH_URL}`
 }</pre>
       <span className='poweredBy'>Powered by <strong>Infomaker LCC</strong></span>
